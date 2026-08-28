@@ -1,0 +1,68 @@
+# This used to describe a 3-service Postgres + FastAPI + frontend stack.
+# That's not what actually runs today: the FastAPI backend under ./backend
+# has no Dockerfile (this file's `build` for it could never succeed), and
+# the frontend service pointed at a backend port the app doesn't call. It
+# also committed a real-looking default database password and JWT secret
+# in plaintext. This is the compose file for the app that's actually live:
+# a single Node/Express process serving the built frontend and API.
+#
+# If/when the ./backend FastAPI + Postgres + pgvector service is wired up
+# (see the readiness audit's Path A/B decision), its own Dockerfile and a
+# `db` service belong back in here alongside this one - with real secrets
+# supplied via `env_file` or your host's secret manager, never committed.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    # No fixed container_name here on purpose: Compose auto-names containers
+    # per-project (from the folder name) instead. A fixed name collides with
+    # any earlier container of the same name from a *different* folder -
+    # e.g. a previous zip extracted next to this one - since container names
+    # are shared across the whole Docker host, not scoped to a folder. That
+    # collision is exactly what kept blocking `docker compose up` here.
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # At least one AI provider key should be set in a .env file next to this
+      # compose file, or every AI-dependent feature honestly falls back to
+      # deterministic/non-AI responses instead of failing. OpenAI is used
+      # when both are set.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # Powers Job Search & Apply (South Africa listings via Adzuna). Free
+      # developer account: https://developer.adzuna.com. Without both set,
+      # job search honestly reports itself as not configured.
+      - ADZUNA_APP_ID=${ADZUNA_APP_ID:-}
+      - ADZUNA_APP_KEY=${ADZUNA_APP_KEY:-}
+      # When FIREBASE_PROJECT_ID is set, real data goes to Firebase's
+      # Firestore database instead of the local JSON file below - the right
+      # choice for a real deployment. Leave blank for local development.
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
+    volumes:
+      # Without this, every account/workspace/message lives only inside this
+      # one container's own filesystem layer - `docker compose down`, or
+      # simply extracting a future update into a new folder and starting a
+      # new container there, wipes it with no warning. Mapping a stable
+      # folder on the HOST (outside any versioned project folder, so it's
+      # the same path across every future update) means the data survives
+      # rebuilds, restarts, and moving to a new zip/folder. Point this at a
+      # real path on your machine - e.g. on Windows:
+      #   - C:/UniAgentData:/app/data
+      # and create that folder once before your first `docker compose up`.
+      - ${UNIAGENT_HOST_DATA_DIR:-./data}:/app/data
+    ports:
+      # Host port 3001 -> container port 3000. Mapped off the default 3000
+      # because another project on this machine ("projectagent") already
+      # holds that port; the app itself still runs on 3000 inside its own
+      # container, only the externally-visible port changed.
+      - "3001:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

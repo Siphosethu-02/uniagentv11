@@ -1,0 +1,6 @@
+{
+  "name": "UNiAGENT — AI University Student Agent",
+  "description": "AI University Student Agent platform (in active development) with academic tracking, career planning, document search, and a report generator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
